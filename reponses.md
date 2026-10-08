@@ -55,3 +55,30 @@ SERVER_PORT=8082 évite que les deux services utilisent le même port sur la mac
 Q2.2
 
 Ticket fonctionne encore, mais il ne peut plus vérifier les films pour une réservation. Sa readiness passe donc à DOWN, tandis que sa liveness reste UP. Redémarrer ticket ne réglerait pas la panne de movie.
+
+## Partie 3
+
+```text
+$ docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' movie-service
+movie-service:1.0.0 232MB
+$ docker images --format '{{.Repository}}:{{.Tag}} {{.Size}}' ticket-service
+ticket-service:1.0.0 232MB
+$ docker run --rm --entrypoint id movie-service:1.0.0
+uid=10001(spring) gid=101(spring) groups=101(spring)
+$ curl -fsS http://localhost:8080/api/movies/whoami
+{"environment":"compose","hostname":"e82570d67ed2"}
+$ curl --retry 30 --retry-delay 1 --retry-connrefused --retry-all-errors -fsS http://localhost:8082/api/tickets -H 'Content-Type: application/json' -d '{"movieId":1,"seats":2}'
+{"id":1,"movieId":1,"movieTitle":"Pod Fiction","seats":2,"total":21.00,"createdAt":"2026-10-08T09:03:16.097526376Z"}
+```
+
+Q3.1
+
+Les dépendances sont téléchargées dans une couche Docker avant la copie des sources. Si seule une ligne de Java change, Docker garde cette couche en cache et relance la compilation. Les dépendances ne sont téléchargées à nouveau que si le pom.xml change ou si le cache manque.
+
+Q3.2
+
+MaxRAMPercentage=75 adapte la taille maximale du heap à la mémoire du conteneur. Avec -Xmx512m, cette taille reste fixée à 512 Mo, même si la limite du conteneur change. Il faut aussi garder de la mémoire pour le reste de la JVM, pas seulement pour le heap.
+
+Q3.3
+
+Les Pods ticket peuvent démarrer avant movie. Leur readiness échoue tant que movie ne répond pas, donc ils ne reçoivent pas de trafic du Service. Ils deviennent prêts quand movie est disponible, sans avoir besoin de redémarrer.
