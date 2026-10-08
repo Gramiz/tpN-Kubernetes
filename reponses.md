@@ -82,3 +82,41 @@ MaxRAMPercentage=75 adapte la taille maximale du heap à la mémoire du conteneu
 Q3.3
 
 Les Pods ticket peuvent démarrer avant movie. Leur readiness échoue tant que movie ne répond pas, donc ils ne reçoivent pas de trafic du Service. Ils deviennent prêts quand movie est disponible, sans avoir besoin de redémarrer.
+
+## Partie 4
+
+```text
+$ kubectl -n cinema-exam get pods
+NAME                      READY   STATUS    RESTARTS   AGE
+movie-59684459f4-hhmlq    1/1     Running   0          21s
+movie-59684459f4-nd2rn    1/1     Running   0          21s
+ticket-66d95c98b6-9m6pq   1/1     Running   0          21s
+ticket-66d95c98b6-9p899   1/1     Running   0          21s
+$ kubectl -n cinema-exam get endpoints movie ticket
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+NAME     ENDPOINTS                           AGE
+movie    10.244.0.11:8080,10.244.0.12:8080   21s
+ticket   10.244.0.13:8080,10.244.0.14:8080   21s
+$ kubectl -n cinema-exam get endpointslices -l kubernetes.io/service-name
+NAME           ADDRESSTYPE   PORTS   ENDPOINTS                 AGE
+movie-tdwdb    IPv4          8080    10.244.0.12,10.244.0.11   21s
+ticket-8zzbt   IPv4          8080    10.244.0.14,10.244.0.13   21s
+$ kubectl -n cinema-exam exec deploy/ticket -- wget -qO- http://movie:8080/api/movies/whoami
+{"environment":"kubernetes","hostname":"movie-59684459f4-hhmlq"}
+$ kubectl -n cinema-exam exec deploy/ticket -- wget -qO- http://localhost:8080/actuator/health/readiness
+{"status":"UP","components":{"movie":{"status":"UP"},"readinessState":{"status":"UP"}}}
+$ curl --retry 30 --retry-delay 1 --retry-connrefused --retry-all-errors -fsS http://localhost:8082/api/tickets -H 'Content-Type: application/json' -d '{"movieId":2,"seats":2}'
+{"id":1,"movieId":2,"movieTitle":"Le Seigneur des Pods","seats":2,"total":24.00,"createdAt":"2026-10-08T09:03:56.002526631Z"}
+```
+
+Q4.1
+
+Les fichiers de ce dossier sont lus dans l’ordre de leur nom : 00, 10, 20, 30 puis 40. Les préfixes placent le namespace et les ConfigMaps avant les Deployments. Cela ne veut pas dire que kubectl attend la fin du démarrage des Pods avant de passer au fichier suivant.
+
+Q4.2
+
+La startupProbe attend le démarrage de Spring Boot. Pendant ce temps, les autres probes sont suspendues et le Pod reste à 0/1. Ensuite, la readiness vérifie qu’il peut recevoir du trafic. Pour ticket, movie doit aussi être disponible. Ce délai au démarrage est normal.
+
+Q4.3
+
+Avec Always, Kubernetes contacte le registre pour résoudre l’image. Les images du TP ont été chargées dans Minikube et ne sont pas publiées sur Docker Hub. Le téléchargement échoue donc avec ErrImagePull, puis ImagePullBackOff.
