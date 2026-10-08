@@ -166,3 +166,92 @@ Avec Exact, la règle /api/movies ne correspondrait pas à /api/movies/1. Sans a
 Q5.3
 
 La réponse est 404, car aucune règle de l’Ingress ne correspond à /actuator/health. Cela évite d’exposer les informations de santé de l’application par cet accès. Les probes peuvent toujours joindre Actuator dans le cluster.
+
+## Partie 6
+
+6.1
+
+Prédictions avant l’arrêt de movie :
+
+a) Ticket reste Running, passe à 0/1 et garde RESTARTS à 0.
+b) Le Service ticket n’a plus d’endpoints prêts.
+c) GET /api/tickets via l’Ingress renvoie 503.
+d) La liveness de ticket reste UP.
+
+```text
+$ kubectl -n cinema-exam scale deploy/movie --replicas=0
+deployment.apps/movie scaled
+$ kubectl -n cinema-exam get pods
+NAME                      READY   STATUS    RESTARTS   AGE
+ticket-66d95c98b6-9m6pq   0/1     Running   0          54s
+ticket-66d95c98b6-9p899   0/1     Running   0          54s
+$ kubectl -n cinema-exam get endpoints movie ticket
+Warning: v1 Endpoints is deprecated in v1.33+; use discovery.k8s.io/v1 EndpointSlice
+NAME     ENDPOINTS   AGE
+movie    <none>      54s
+ticket               54s
+$ kubectl -n cinema-exam get endpointslices -l kubernetes.io/service-name
+NAME           ADDRESSTYPE   PORTS     ENDPOINTS                 AGE
+movie-tdwdb    IPv4          <unset>   <unset>                   54s
+ticket-8zzbt   IPv4          8080      10.244.0.14,10.244.0.13   54s
+$ curl --max-time 10 -sS --resolve cinema.local:18080:127.0.0.1 -w '\nHTTP %{http_code}\n' http://cinema.local:18080/api/tickets
+<html>
+<head><title>503 Service Temporarily Unavailable</title></head>
+<body>
+<center><h1>503 Service Temporarily Unavailable</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+
+HTTP 503
+$ kubectl -n cinema-exam exec deploy/ticket -- wget -qO- http://localhost:8080/actuator/health/liveness
+{"status":"UP"}
+```
+
+Q6.1
+
+1. Movie est réduit à zéro réplica et n’a plus de backend disponible.
+2. MovieHealthIndicator ne peut plus joindre movie ; la readiness ticket échoue.
+3. Après le seuil d’échecs, les Pods ticket sont retirés des destinations prêtes du Service.
+4. NGINX ne dispose plus de backend prêt pour ticket et renvoie 503.
+
+La liveness reste UP : les conteneurs ne sont pas redémarrés, et RESTARTS reste à 0. Après restauration de movie à deux réplicas, ticket retrouve automatiquement sa readiness, sans intervention sur son Deployment.
+
+6.2
+
+| # | Statut observé | Commande de diagnostic | Cause exacte | Correction apportée |
+|---|---|---|---|---|
+| 1 | ErrImagePull, puis événement ImagePullBackOff | kubectl -n cinema-exam describe pod ticket-debug-6bc9655bd5-m7bcb | Always tente Docker Hub : pull access denied pour l’image uniquement locale. | imagePullPolicy: IfNotPresent |
+| 2 | CreateContainerConfigError | kubectl -n cinema-exam describe pod ticket-debug-748f79d8cf-t4hc7 | configmap "ticket-configmap" not found | Référence ticket-config |
+| 3 | Running, READY 0/1 | kubectl -n cinema-exam describe pod ticket-debug-c9999c4dc-hsfcp | Readiness sur 8081 : connection refused, application sur 8080. | Port de probe 8080 |
+
+```text
+$ kubectl apply -f broken/ticket-debug.yaml
+deployment.apps/ticket-debug configured
+$ kubectl -n cinema-exam get pods -l app=ticket-debug
+NAME                           READY   STATUS        RESTARTS   AGE
+ticket-debug-56f4f5848-mf262   1/1     Running       0          7s
+ticket-debug-c9999c4dc-hsfcp   0/1     Terminating   0          21s
+$ kubectl delete -f broken/ticket-debug.yaml
+deployment.apps "ticket-debug" deleted from cinema-exam namespace
+```
+
+6.3
+
+```text
+$ kubectl apply -f k8s/10-config.yaml
+configmap/movie-config configured
+configmap/ticket-config unchanged
+$ curl --max-time 10 -sS --resolve cinema.local:18080:127.0.0.1 -w '\nHTTP %{http_code}\n' http://cinema.local:18080/api/movies/whoami
+{"hostname":"movie-59684459f4-57x9s","environment":"kubernetes"}
+HTTP 200
+$ kubectl -n cinema-exam rollout restart deploy/movie
+deployment.apps/movie restarted
+$ curl --max-time 10 -sS --resolve cinema.local:18080:127.0.0.1 -w '\nHTTP %{http_code}\n' http://cinema.local:18080/api/movies/whoami
+{"environment":"production","hostname":"movie-8678449bcc-pgwgk"}
+HTTP 200
+```
+
+Q6.3
+
+Les variables d’environnement d’un conteneur ne changent pas quand la ConfigMap est modifiée. Le rollout restart remplace les Pods, qui récupèrent alors la nouvelle valeur au démarrage. Il n’y a pas besoin de reconstruire l’image.
