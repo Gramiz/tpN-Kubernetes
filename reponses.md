@@ -120,3 +120,49 @@ La startupProbe attend le démarrage de Spring Boot. Pendant ce temps, les autre
 Q4.3
 
 Avec Always, Kubernetes contacte le registre pour résoudre l’image. Les images du TP ont été chargées dans Minikube et ne sont pas publiées sur Docker Hub. Le téléchargement échoue donc avec ErrImagePull, puis ImagePullBackOff.
+
+## Partie 5
+
+```text
+$ curl --max-time 15 -sS -w '\nHTTP %{http_code}\n' http://cinema.local/api/movies
+[{"id":1,"title":"Pod Fiction","genre":"Thriller","price":10.50,"seats":80},{"id":2,"title":"Le Seigneur des Pods","genre":"Fantasy","price":12.00,"seats":3},{"id":3,"title":"Docker Wars","genre":"Science-fiction","price":9.00,"seats":150},{"id":4,"title":"Rollback to the Future","genre":"Comédie","price":8.50,"seats":0}]
+HTTP 200
+
+$ curl --max-time 15 -sS -w '\nHTTP %{http_code}\n' -H 'Content-Type: application/json' -d '{"movieId":3,"seats":10}' http://cinema.local/api/tickets
+{"id":2,"movieId":3,"movieTitle":"Docker Wars","seats":10,"total":90.00,"createdAt":"2026-10-08T09:21:00.207112757Z"}
+HTTP 201
+
+Six appels à http://cinema.local/api/movies/whoami :
+movie-7bd695464f-9pr78
+movie-7bd695464f-9pr78
+movie-7bd695464f-9pr78
+movie-7bd695464f-4l9c4
+movie-7bd695464f-9pr78
+movie-7bd695464f-4l9c4
+Nombre de Pods distincts : 2
+
+$ curl --max-time 15 -sS -o /dev/null -w 'HTTP %{http_code}\n' http://cinema.local/actuator/health
+HTTP 404
+
+$ kubectl -n cinema-exam get pods,ingress
+NAME                          READY   STATUS    RESTARTS   AGE
+pod/movie-7bd695464f-4l9c4    1/1     Running   0          11m
+pod/movie-7bd695464f-9pr78    1/1     Running   0          11m
+pod/ticket-66d95c98b6-thxdg   1/1     Running   0          15m
+pod/ticket-66d95c98b6-zfnjn   1/1     Running   0          15m
+
+NAME                               CLASS   HOSTS          ADDRESS        PORTS   AGE
+ingress.networking.k8s.io/cinema   nginx   cinema.local   192.168.49.2   80      18m
+```
+
+Q5.1
+
+Deux Pods movie différents ont répondu aux six appels. Le Service donne les destinations prêtes et le contrôleur Ingress NGINX répartit les requêtes entre elles. Les noms ne sont pas obligés d’alterner à chaque appel.
+
+Q5.2
+
+Avec Exact, la règle /api/movies ne correspondrait pas à /api/movies/1. Sans autre règle pour ce chemin, la réponse serait 404.
+
+Q5.3
+
+La réponse est 404, car aucune règle de l’Ingress ne correspond à /actuator/health. Cela évite d’exposer les informations de santé de l’application par cet accès. Les probes peuvent toujours joindre Actuator dans le cluster.
