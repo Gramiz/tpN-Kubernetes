@@ -255,3 +255,58 @@ HTTP 200
 Q6.3
 
 Les variables d’environnement d’un conteneur ne changent pas quand la ConfigMap est modifiée. Le rollout restart remplace les Pods, qui récupèrent alors la nouvelle valeur au démarrage. Il n’y a pas besoin de reconstruire l’image.
+
+## Partie 7
+
+Q7.1
+
+CoreDNS résout movie dans le namespace cinema-exam et renvoie la ClusterIP du Service movie. Ticket envoie sa requête à cette adresse sur le port 8080. Le réseau du Service la dirige vers un Pod movie prêt, sélectionné avec le label app: movie, sur son port http.
+
+Q7.2
+
+Chaque Pod ticket a sa propre liste de réservations en mémoire. Selon le Pod qui répond, le nombre peut donc changer. Quand les Pods sont supprimés, leurs réservations sont perdues. Pour les conserver et les partager, il faudrait une base de données persistante commune aux deux instances.
+
+```text
+$ curl --max-time 10 -sS --resolve cinema.local:18080:127.0.0.1 -w '\nHTTP %{http_code}\n' http://cinema.local:18080/api/tickets -H 'Content-Type: application/json' -d '{"movieId": 3, "seats": 1}'
+{"id":2,"movieId":3,"movieTitle":"Docker Wars","seats":1,"total":9.00,"createdAt":"2026-10-08T09:06:01.226200883Z"}
+HTTP 201
+$ curl --max-time 10 -sS --resolve cinema.local:18080:127.0.0.1 -w '\nHTTP %{http_code}\n' http://cinema.local:18080/api/tickets -H 'Content-Type: application/json' -d '{"movieId": 3, "seats": 1}'
+{"id":2,"movieId":3,"movieTitle":"Docker Wars","seats":1,"total":9.00,"createdAt":"2026-10-08T09:06:01.248490716Z"}
+HTTP 201
+$ curl --max-time 10 -sS --resolve cinema.local:18080:127.0.0.1 -w '\nHTTP %{http_code}\n' http://cinema.local:18080/api/tickets -H 'Content-Type: application/json' -d '{"movieId": 3, "seats": 1}'
+{"id":3,"movieId":3,"movieTitle":"Docker Wars","seats":1,"total":9.00,"createdAt":"2026-10-08T09:06:01.272687133Z"}
+HTTP 201
+$ curl --max-time 10 -sS --resolve cinema.local:18080:127.0.0.1 -w '\nHTTP %{http_code}\n' http://cinema.local:18080/api/tickets -H 'Content-Type: application/json' -d '{"movieId": 3, "seats": 1}'
+{"id":3,"movieId":3,"movieTitle":"Docker Wars","seats":1,"total":9.00,"createdAt":"2026-10-08T09:06:01.298083133Z"}
+HTTP 201
+
+Nombre de réservations (10 appels) : [3, 3, 3, 3, 3, 3, 3, 3, 3, 3]
+$ kubectl -n cinema-exam delete pods -l app=ticket
+pod "ticket-66d95c98b6-9m6pq" deleted from cinema-exam namespace
+pod "ticket-66d95c98b6-9p899" deleted from cinema-exam namespace
+
+Après remplacement des Pods : [0, 0, 0, 0, 0, 0]
+```
+
+Pendant ce test, les quatre nouvelles réservations se sont réparties également. Avec les réservations précédentes, chaque Pod en avait trois, donc le nombre affiché ne variait pas. Les identifiants identiques dans les réponses viennent des compteurs séparés des deux Pods. Après leur suppression, toutes les listes sont vides.
+
+Q7.3
+
+Un nouveau Pod movie remplace celui qui a été supprimé. Le ReplicaSet maintient les deux réplicas demandés par le Deployment. Un Pod seul ne serait pas recréé après sa suppression et ne bénéficierait pas de la gestion des réplicas et des mises à jour du Deployment.
+
+```text
+$ kubectl -n cinema-exam get pods -l app=movie
+NAME                     READY   STATUS    RESTARTS   AGE
+movie-8678449bcc-pgwgk   1/1     Running   0          91s
+movie-8678449bcc-wltcl   1/1     Running   0          87s
+$ kubectl -n cinema-exam delete pod movie-8678449bcc-pgwgk
+pod "movie-8678449bcc-pgwgk" deleted from cinema-exam namespace
+$ kubectl -n cinema-exam get pods -l app=movie
+NAME                     READY   STATUS    RESTARTS   AGE
+movie-8678449bcc-wlqxz   0/1     Running   0          1s
+movie-8678449bcc-wltcl   1/1     Running   0          88s
+$ kubectl -n cinema-exam get pods -l app=movie
+NAME                     READY   STATUS    RESTARTS   AGE
+movie-8678449bcc-wlqxz   1/1     Running   0          5s
+movie-8678449bcc-wltcl   1/1     Running   0          92s
+```
