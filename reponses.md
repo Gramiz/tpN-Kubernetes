@@ -23,3 +23,35 @@ Q1.4
 | /actuator/health/readiness | readinessProbe | Pod non prêt, retiré des destinations prêtes du Service, sans redémarrage. |
 
 server.shutdown: graceful permet aux requêtes en cours de finir pendant l’arrêt de l’ancienne instance lors d’un rolling update.
+
+## Partie 2
+
+```text
+$ POST ticket {movieId:2,seats:3}
+HTTP 201
+{"id":1,"movieId":2,"movieTitle":"Le Seigneur des Pods","seats":3,"total":36.00,"createdAt":"2026-10-08T08:59:10.222957Z"}
+
+$ GET ticket readiness
+HTTP 200
+{"status":"UP","components":{"movie":{"status":"UP"},"readinessState":{"status":"UP"}}}
+
+$ GET ticket readiness après arrêt movie
+HTTP 503
+{"status":"DOWN","components":{"movie":{"status":"DOWN","details":{"error":"I/O error on GET request for \"http://localhost:8080/actuator/health/liveness\": null"}},"readinessState":{"status":"UP"}}}
+
+$ GET ticket liveness après arrêt movie
+HTTP 200
+{"status":"UP"}
+
+$ POST ticket après arrêt movie
+HTTP 503
+{"timestamp":"2026-10-08T08:59:10.322+00:00","status":503,"error":"Service Unavailable","path":"/api/tickets"}
+```
+
+Q2.1
+
+SERVER_PORT=8082 évite que les deux services utilisent le même port sur la machine. Spring Boot permet de remplacer server.port par une variable d’environnement grâce au relaxed binding, sans modifier application.yaml.
+
+Q2.2
+
+Ticket fonctionne encore, mais il ne peut plus vérifier les films pour une réservation. Sa readiness passe donc à DOWN, tandis que sa liveness reste UP. Redémarrer ticket ne réglerait pas la panne de movie.
