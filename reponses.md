@@ -310,3 +310,38 @@ NAME                     READY   STATUS    RESTARTS   AGE
 movie-8678449bcc-wlqxz   1/1     Running   0          5s
 movie-8678449bcc-wltcl   1/1     Running   0          92s
 ```
+
+## Bonus
+
+B1
+
+```text
+$ kubectl -n cinema-exam exec deploy/movie -- id
+uid=10001(spring) gid=101(spring) groups=101(spring)
+
+$ kubectl -n cinema-exam exec deploy/movie -- touch /test
+touch: cannot touch '/test': Read-only file system
+command terminated with exit code 1
+```
+
+B2
+
+```text
+$ kubectl -n cinema-exam rollout restart deploy/movie
+deployment.apps/movie restarted
+
+$ kubectl -n cinema-exam rollout status deploy/movie --timeout=180s
+Waiting for deployment "movie" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "movie" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "movie" rollout to finish: 1 out of 2 new replicas have been updated...
+Waiting for deployment "movie" rollout to finish: 1 old replicas are pending termination...
+Waiting for deployment "movie" rollout to finish: 1 old replicas are pending termination...
+deployment "movie" successfully rolled out
+
+300 requêtes GET /api/movies, espacées de 0.2 s :
+{'200': 300}
+```
+
+QB2
+
+Le premier essai a donné 299 réponses 200 et un timeout. Après l’ajout d’un preStop de 10 secondes et d’un délai de terminaison de 45 secondes, le deuxième essai a donné 300 réponses 200. maxUnavailable: 0 garde les réplicas disponibles et maxSurge: 1 permet de démarrer un Pod supplémentaire. La readiness attend que le nouveau Pod soit prêt, et shutdown: graceful laisse finir les requêtes de l’ancien. Le délai preStop laisse aussi le temps de retirer l’ancien Pod du routage avant son arrêt.
