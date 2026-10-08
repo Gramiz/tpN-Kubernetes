@@ -1,3 +1,9 @@
+Pour déployer le projet et lancer toutes les vérifications automatiquement, exécuter depuis le dossier du projet :
+
+```bash
+./verifier-tp.sh --complet
+```
+
 # Examen CinéK8s — Mathieu ROBERT
 
 ## Partie 1
